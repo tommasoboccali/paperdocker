@@ -97,20 +97,34 @@ times are very similar, basically indistinguishable.
 This opens the door to interesting application in terms of benchmarking. After SPEC and SPECfp, it was soon realised that standard benchmarking was not really adequate for HEP, as a machine benchmarked as 2x was not twice as fast for LHC typical applications (which are quite RAM-intensive, heavy on caches, etc). HepSpec06 was hence designed in 2006 to scale as typical LHC experiments applications. Today, this is not completely true anymore, especially in moving to 64-bit. Docker (see previous example), might hence be the tool to offer a simple, portable way to run a benchmark. And this could be given to hardware vendors to run realistic (and a large set, and always up-to-date) benchmarks of CMS workflows.
 
 \section{``Dockerizing'' a computing site}
+Virtualization technologies are the best choice when dealing when dealing with users with diverse needs in term of computing resources. While Linux is the de-facto standard for most scientific uses, precise hardware and software needs can still vary to the extent of not allowing for a catch-all solution. Software from previous generation experiment is often not validated for the latest-greatest Linux versions, for example, and thus cannot coexist with recent experiments which instead prefer the best performance coming with newer releases.
 
-The CMS Pisa Tier-2 center is one of the biggest Italian computing centers. It is a Tier-2 in WLCG, supporting CMS, but CMS is actually a minority part of the resources: these nclude, to a smaller extent, also LHCb and ATLAS, 20 more Virtual Organizations, a National Theoretical Physics computing center, a 2000 (and more) cores fluidodynamic cluster (used in industry). In terms of resources it consists of ~8k cores, >2 PB, highly heterogeneous WN hosts (some are 1 Gbe, some 10 Gbe, some Infiniband). Also the OS requests are heterogeneous (some still SL5, even SL4 up to some months ago; some prefer very recent releases, generally OpenSuSe). The only common points between such a diverse user-community are: {\em i)} GPFS is used to serve data for all the use-cases supported on-site; {\em ii)} AFS is used for user areas; {\em iii)} LSF is used for resource access.
+The CMS Pisa Tier-2 center is one of the biggest Italian scientific computing center: it is a Tier-2 in WLCG, supporting CMS, but CMS is actually a minority part of the resources/users, which include also LHCb and ATLAS, 20 more Virtual Organizations, a National Theoretical Physics computing center, a 2000 (and more) cores fluidodynamic cluster (used in industry related researches). In terms of resources it consists of ~8k cores, >2 PB, highly heterogeneous WN hosts (some are 1 Gbe, some 10 Gbe, some Infiniband). Also the OS requests are heterogeneous (some still SL5, even SL4 up to some months ago; some prefer very recent releases, generally OpenSuSe). The only common points between such a diverse user-community are: 
 
-The main issue in Pisa recently was to understand how to provision the correct environment to all these diverse resources. Virtual Machines (e.g. OpenStack) are an option but
-Pisa also has older machines which are low in RAM. Infiniband seems to loose performance in a completely virtualised environment, also. The solution identified so far is a very light virtualisation via chroot. Every host machine (with the very latest OpenSUSE) has a tar file from which it uncompress an SL6 (or SLx) and then chroot to this and it just works. Pisa mounts natively all the file-systems (CVMFS/GPFS/AFS) to the host and they are passed via bind to the chroot environment. Every machine has pre-installed as many tar files as the possible environments are: these can be un-tarred and ``started'' on demand via a set of scripts, basically deciding on the flight which pool the machine lives in. This solution works and it is in production for Pisa since 3 years.
+\begin{itemize}
+\item GPFS is used to serve data for all the use-cases supported on-site;
+\item AFS is used for user areas; 
+\item LSF is used for resource access, also interactive.
+\end{itemize}
 
-On the other hand, Docker seems to be a viable solution, too. The same overhead (virtually 0) was expected, but it should be easier to manage. Basically, Two are the main points in favour of Docker adoption in Pisa: {\em i)} no more tar files and a complicate management;
-adopt a system that has a container management a-la git; everything is nicely logged, you can branch, you can pull, you can push, etc. Also, a local registry is set-up (to avoid exposure of sensitive information). {\em ii)} it starts from a running system based on tar; if you just start from a tar file (chroot-based set-up), Docker provides a single command to build the container:
-%
+The main issue in Pisa recently was to understand how to provision the correct environment to all these diverse resources. Virtual Machines (e.g. OpenStack) were considered as an option, but
+Pisa also has older machines which are low in RAM. Infiniband connectivity, moreover, seems to loose performance in a completely virtualised environment. The solution identified up to recently so far was a very light virtualisation via chroot. Every host machine (with the very latest OpenSUSE kernel) was starting sand-boxed machines as tar files containind complete SL6 (or SLx) systems,  via chroot. Site-wide file-systems (CVMFS/GPFS/AFS) were mounted by the host, and then seen by the machines as local file systems using the emph{bind}  tool.
+Every machine had pre-installed as many tar files as the possible environments are: these could be un-tarred and ``started'' on demand via a set of scripts, basically forcing the LSF pool the machine lives in. This solution works and it has been in production for Pisa since 3 years.
+
+On the other hand, Docker is to be a viable solution, too. It has the same overhead (virtually 0) as chroot, and comes with the added plus of easier image storing, deployment and control. Basically, three are the main points in favour of Docker adoption in Pisa: 
+\begin{itemize}
+\item no more tar files and a complicate management;
+\item the adoption of a git-like image management, where every action on the repository is properly logged, and you can bransh, pull, etc;
+\item the very easy deployment of a local image repository, to avoid exposure of sensitive information;
+\item the extremely easy conversion of an existing chroot's tar image to a Docker image, via a single command:
 \begin{verbatim}
-    sudo tar -C raring -c . | sudo docker import - raring
 \end{verbatim}
-%
-A Tier-2 on-demand approach was attractive, but site performances for a site in production are most important at the moment. For example, Pisa still decided to mount CVMFS/GPFS/AFS on the host and pass this via ``-v''. This is not something you can ask e.g. in opportunistic sites, but this {\em i)} avoids running docker privileged, and {\em ii)}
+    sudo tar -C ExistingChrootBaseDir -c . | sudo docker import - PisaWN
+\end{itemize}
+
+A Tier-2 on-demand approach was initially planned, where no dependency on the underlying physical architecture was foreseen, but currently it has been decided to privilege ese of deplyment and performance over 
+
+attractive, but site performances for a site in production are most important at the moment. For example, Pisa still decided to mount CVMFS/GPFS/AFS on the host and pass this via ``-v''. This is not something you can ask e.g. in opportunistic sites, but this {\em i)} avoids running docker privileged, and {\em ii)}
 avoids multiple copies of caches (CVMFS/AFS) if more than one container is running. LSF is also in the container, so it automatically connects the machine to the proper LSF queue, with a start command as follows:
 %
 \begin{verbatim}
